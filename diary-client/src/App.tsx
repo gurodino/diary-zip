@@ -69,6 +69,7 @@ function App() {
   const [loginId, setLoginId] = useState('');
   const [password, setPassword] = useState('');
   const [authMessage, setAuthMessage] = useState('');
+  const [authMessageType, setAuthMessageType] = useState<'success' | 'error' | ''>('');
   const [authLoading, setAuthLoading] = useState(false);
   const [isAppUnlocked, setIsAppUnlocked] = useState(() => { const saved = readSettings(); return !(saved.require_on_login && saved.has_secondary_password); });
   const [unlockToken, setUnlockToken] = useState<string | null>(null);
@@ -142,7 +143,40 @@ function App() {
     refreshStreak();
   }, [token, authFetch, applySettings, refreshStreak]);
 
-  const handleAuthSubmit = async (event: React.FormEvent) => { event.preventDefault(); const endpoint = isLoginMode ? '/api/auth/login' : '/api/auth/register'; setAuthLoading(true); try { const response = await fetch(`${API_BASE}${endpoint}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ login_id: loginId, password }) }); const data = await response.json().catch(() => ({})); if (!response.ok) throw new Error(data.error || '요청에 실패했습니다.'); if (isLoginMode) { localStorage.setItem('token', data.token); const next = applySettings(data.settings); setToken(data.token); setAuthMessage(''); setPassword(''); setIsAppUnlocked(!(next.require_on_login && next.has_secondary_password)); } else { setAuthMessage('회원가입 완료! 로그인해주세요.'); setIsLoginMode(true); setLoginId(''); setPassword(''); } } catch (error) { setAuthMessage(errorMessage(error)); } finally { setAuthLoading(false); } };
+  const handleAuthSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    const endpoint = isLoginMode ? '/api/auth/login' : '/api/auth/register';
+    setAuthLoading(true);
+    try {
+      const response = await fetch(`${API_BASE}${endpoint}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ login_id: loginId, password })
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || '요청에 실패했습니다.');
+      if (isLoginMode) {
+        localStorage.setItem('token', data.token);
+        const next = applySettings(data.settings);
+        setToken(data.token);
+        setAuthMessage('');
+        setAuthMessageType('');
+        setPassword('');
+        setIsAppUnlocked(!(next.require_on_login && next.has_secondary_password));
+      } else {
+        setAuthMessage('회원가입 완료! 로그인해주세요.');
+        setAuthMessageType('success');
+        setIsLoginMode(true);
+        setLoginId('');
+        setPassword('');
+      }
+    } catch (error) {
+      setAuthMessage(errorMessage(error));
+      setAuthMessageType('error');
+    } finally {
+      setAuthLoading(false);
+    }
+  };
   const handleLogout = () => { clearSession(); setContent(''); localStorage.removeItem(DRAFT_KEY); };
   const handleSaveSettings = async () => { if (secSaving) return; if (secNew && secNew.length < 4) { alert('2차 비밀번호는 4자 이상으로 설정해주세요.'); return; } const willHave = secRemove ? false : Boolean(settings.has_secondary_password || secNew); if (!willHave && (settings.require_on_login || settings.require_on_diary)) { alert('잠금 옵션을 사용하려면 2차 비밀번호를 먼저 설정해주세요.'); return; } if (settings.has_secondary_password && !secCurrent) { alert('설정을 바꾸려면 현재 2차 비밀번호를 입력해주세요.'); return; } setSecSaving(true); try { const data = await authFetch('/api/settings', { method: 'POST', body: JSON.stringify({ require_on_login: Boolean(settings.require_on_login), require_on_diary: Boolean(settings.require_on_diary), current_secondary_password: secCurrent || undefined, new_secondary_password: secRemove ? undefined : secNew || undefined, remove_secondary_password: secRemove }) }); applySettings(data.settings); setSecCurrent(''); setSecNew(''); setSecRemove(false); setUnlockToken(null); alert('보안 설정이 성공적으로 저장되었습니다!'); } catch (error) { alert(`설정 저장 중 오류가 발생했습니다.\n${errorMessage(error)}`); } finally { setSecSaving(false); } };
   const openDiary = async (id: number, tokenForUnlock: string | null = unlockToken) => { setDayEntries(null); setDetail(null); setDetailLoading(true); try { const data = await authFetch(`/api/diaries/${id}`, {}, unlockHeaders(tokenForUnlock)); setDetail(data.data); } catch (error) { if (error instanceof ApiError && error.code === 'UNLOCK_REQUIRED') { setUnlockToken(null); setLockInput(''); setLockError(''); setPendingDiaryId(id); } else alert(errorMessage(error)); } finally { setDetailLoading(false); } };
@@ -191,8 +225,19 @@ function App() {
           <input type="password" autoComplete={isLoginMode ? 'current-password' : 'new-password'} placeholder={isLoginMode ? '비밀번호를 입력해주세요' : '비밀번호 (4자 이상)'} value={password} onChange={event => setPassword(event.target.value)} required minLength={isLoginMode ? undefined : 4} style={{ ...inputStyle, padding: '18px 20px', borderRadius: '16px' }} />
           <button type="submit" disabled={authLoading} style={{ ...primaryBtn, padding: '18px', borderRadius: '16px', marginTop: '8px', background: authLoading ? colors.primaryDisabled : colors.primary }}>{authLoading ? '잠시만요... (서버가 깨어나는 중일 수 있어요)' : isLoginMode ? '시작하기' : '가입하기'}</button>
         </form>
-        <p style={{ color: colors.danger, textAlign: 'center', marginTop: '16px', fontWeight: 500 }}>{authMessage}</p>
-        <button type="button" onClick={() => { setIsLoginMode(!isLoginMode); setAuthMessage(''); setLoginId(''); setPassword(''); }} style={{ ...ghostBtn, marginTop: '20px', fontSize: '15px', fontWeight: 500 }}>{isLoginMode ? '계정이 없으신가요? 간편 가입하기' : '이미 계정이 있으신가요? 로그인'}</button>
+        {authMessage && (
+          <p
+            style={{
+              color: authMessageType === 'success' ? '#10b981' : colors.danger,
+              textAlign: 'center',
+              marginTop: '16px',
+              fontWeight: 500
+            }}
+          >
+            {authMessage}
+          </p>
+        )}
+        <button type="button" onClick={() => { setIsLoginMode(!isLoginMode); setAuthMessage(''); setAuthMessageType(''); setLoginId(''); setPassword(''); }} style={{ ...ghostBtn, marginTop: '20px', fontSize: '15px', fontWeight: 500 }}>{isLoginMode ? '계정이 없으신가요? 간편 가입하기' : '이미 계정이 있으신가요? 로그인'}</button>
       </div> : <>
         {showLockModal && <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(16, 19, 24, .95)', zIndex: 999, display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', padding: '24px' }}><div style={{ width: '100%', maxWidth: '400px', backgroundColor: colors.card, color: colors.textMain, borderRadius: '24px', padding: '32px 24px', textAlign: 'center' }}><h2 style={{ margin: '0 0 8px', fontSize: '22px' }}>🔒 잠금 해제</h2><p style={{ color: colors.textSub, margin: '0 0 24px' }}>{!isAppUnlocked ? '앱을 사용하려면 2차 비밀번호를 입력하세요.' : '비밀 일기를 보려면 2차 비밀번호를 입력하세요.'}</p><input type="password" autoFocus value={lockInput} onChange={event => setLockInput(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') handleUnlock(); }} placeholder="비밀번호 입력" style={{ ...inputStyle, fontSize: '18px', textAlign: 'center', marginBottom: '16px' }} />{lockError && <p style={{ color: colors.danger, margin: '0 0 16px', fontSize: '14px', fontWeight: 600 }}>{lockError}</p>}<div style={{ display: 'flex', gap: '12px' }}>{isAppUnlocked && pendingDiaryId !== null ? <button type="button" onClick={() => { setPendingDiaryId(null); setLockInput(''); setLockError(''); }} style={{ ...primaryBtn, flex: 1, background: colors.inputBg, color: colors.textSub }}>취소</button> : <button type="button" onClick={handleLogout} style={{ ...primaryBtn, flex: 1, background: colors.inputBg, color: colors.textSub }}>로그아웃</button>}<button type="button" onClick={handleUnlock} disabled={lockLoading} style={{ ...primaryBtn, flex: 1, background: lockLoading ? colors.primaryDisabled : colors.primary }}>{lockLoading ? '확인 중...' : '확인'}</button></div></div></div>}
         {dayEntries && <div style={overlayStyle} onClick={() => setDayEntries(null)}><div style={sheetStyle} onClick={event => event.stopPropagation()}><div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}><strong style={{ fontSize: '18px' }}>{formatDateKey(dayEntries[0].date_key)}</strong><button type="button" onClick={() => setDayEntries(null)} style={ghostBtn}>닫기</button></div><div style={{ display: 'grid', gap: '10px' }}>{dayEntries.map((entry, index) => <button key={entry.id} type="button" onClick={() => requestOpenDiary(entry)} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '14px 16px', borderRadius: '14px', border: `1px solid ${colors.border}`, background: colors.inputBg, color: colors.textMain, cursor: 'pointer', fontSize: '15px', textAlign: 'left' }}><span style={{ fontSize: '24px' }}>{entry.is_locked ? '🔒' : entry.ai_emoji}</span><span style={{ flex: 1, fontWeight: 600 }}>{dayEntries.length - index}번째 기록</span>{!entry.is_locked && <span style={{ color: colors.primary, fontWeight: 700 }}>{entry.ai_score}점</span>}</button>)}</div></div></div>}

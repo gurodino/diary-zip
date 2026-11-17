@@ -227,11 +227,12 @@ function App() {
         </form>
         {authMessage && (
           <p
-            className={
-              authMessageType === 'success'
-                ? 'text-center font-medium text-emerald-600'
-                : 'text-center font-medium text-red-600'
-            }
+            style={{
+              color: authMessageType === 'success' ? '#10b981' : colors.danger,
+              textAlign: 'center',
+              marginTop: '16px',
+              fontWeight: 500
+            }}
           >
             {authMessage}
           </p>
